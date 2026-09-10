@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>B612 Community</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      padding: 40px 20px;
+    }
+    .container { max-width: 700px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 30px; }
+
+    .search-box {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+      font-size: 15px;
+      margin-bottom: 20px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-box:focus { border-color: #007bff; }
+
+    .game-item {
+      background: #fff;
+      padding: 14px 18px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: border-color 0.2s;
+    }
+    .game-item:hover { border-color: #999; }
+    .game-info {
+      flex: 1;
+      margin-right: 12px;
+      overflow: hidden;
+    }
+    .game-name {
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .game-date {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
+    .game-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .vote-btn {
+      border: 1px solid #e0e0e0;
+      background: #fafafa;
+      color: #555;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .vote-btn:hover { background: #eee; }
+    .vote-btn:active { transform: scale(0.95); }
+    .vote-btn.voted { pointer-events: none; opacity: 0.5; }
+    .vote-btn.like.voted { background: #e8f5e9; border-color: #66bb6a; color: #2e7d32; opacity: 1; }
+    .vote-btn.dislike.voted { background: #ffebee; border-color: #ef5350; color: #c62828; opacity: 1; }
+
+    .download-link {
+      background: #007bff;
+      color: #fff;
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .download-link:hover { background: #0056b3; }
+    .download-link.disabled { background: #ccc; pointer-events: none; }
+
+    #emptyMsg { text-align: center; padding: 30px; color: #999; }
+
+    .btn-add {
+      display: block;
+      width: fit-content;
+      margin: 30px auto 0;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 14px 28px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .btn-add:hover { background: #444; }
+    .loading { text-align: center; padding: 30px; color: #999; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>B612 Community</h1>
+    <input type="text" class="search-box" id="searchBox" placeholder="Поиск игр по названию...">
+    <div id="gamesList"><div class="loading">Загрузка...</div></div>
+    <a class="btn-add" href="#" target="_blank" rel="noopener noreferrer">+ Выложить проект</a>
+  </div>
+
+  <script>
+    const SHEET_ID = '1SkANYzJm1PdcDKoE_croi-5l3t2ym4_vdsQU5VjrMz0';
+    const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfRtOT2t9pn6Y9kwDgIgkRlzC9qtkObpweHF_sVnpN-g1vbpQ/viewform?usp=preview';
+    // Вставь сюда URL из Шага 2 (Apps Script):
+    const VOTE_URL = 'ВСТАВЬ_СЮДА_URL_ИЗ_ШАГА_2';
+
+    document.querySelector('.btn-add').href = FORM_URL;
+    let allGames = [];
+    const userVotes = JSON.parse(localStorage.getItem('b612_votes') || '{}');
+
+    async function loadGames() {
+      const list = document.getElementById('gamesList');
+      const sheetNames = ['Ответы на форму 1', 'Sheet1', 'Лист1', 'Form Responses 1'];
+
+      for (const sheetName of sheetNames) {
+        try {
+          const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const text = await res.text();
+          if (!text || text.indexOf('{') === -1) continue;
+          const jsonStr = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+          const data = JSON.parse(jsonStr);
+          const rows = data.table.rows;
+          if (!rows || rows.length === 0) continue;
+
+          allGames = rows.map(row => {
+            const cells = row.c;
+            const date = cells[0] && cells[0].v ? cells[0].f : '';
+            const name = cells[1] && cells[1].v ? cells[1].v : 'Без названия';
+            let rawLink = cells[2] && cells[2].v ? String(cells[2].v) : '';
+            if (rawLink.startsWith('file://') || rawLink.startsWith('content://')) rawLink = '';
+            const link = rawLink.trim().replace(/\s+/g, '') || '#';
+            const likes = cells[3] && cells[3].v ? parseInt(cells[3].v, 10) || 0 : 0;
+            const dislikes = cells[4] && cells[4].v ? parseInt(cells[4].v, 10) || 0 : 0;
+            return { date, name, link, likes, dislikes };
+          });
+
+          renderGames(allGames);
+          return;
+        } catch (e) { continue; }
+      }
+      list.innerHTML = '<div id="emptyMsg">Не удалось загрузить список. Проверь настройки доступа таблицы.</div>';
+    }
+
+    function renderGames(games) {
+      const list = document.getElementById('gamesList');
+      const search = document.getElementById('searchBox').value.toLowerCase().trim();
+      const filtered = search ? games.filter(g => g.name.toLowerCase().includes(search)) : games;
+
+      if (filtered.length === 0) {
+        list.innerHTML = '<div id="emptyMsg">Ничего не найдено.</div>';
+        return;
+      }
+
+      list.innerHTML = filtered.map(g => {
+        const userVote = userVotes[g.name] || '';
+        return `
+          <div class="game-item">
+            <div class="game-info">
+              <div class="game-name">${g.name}</div>
+              <div class="game-date">${g.date}</div>
+            </div>
+            <div class="game-actions">
+              <button class="vote-btn like ${userVote === 'like' ? 'voted' : ''}" onclick="vote('${g.name.replace(/'/g, "\\'")}', 'like', this)">
+                👍 ${g.likes}
+              </button>
+              <button class="vote-btn dislike ${userVote === 'dislike' ? 'voted' : ''}" onclick="vote('${g.name.replace(/'/g, "\\'")}', 'dislike', this)">
+                👎 ${g.dislikes}
+              </button>
+              <a class="download-link${g.link === '#' ? ' disabled' : ''}" href="${g.link}" target="_blank" rel="noopener noreferrer">Скачать</a>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function vote(name, type, btn) {
+      if (userVotes[name]) return; // Уже голосовал
+      userVotes[name] = type;
+      localStorage.setItem('b612_votes', JSON.stringify(userVotes));
+
+      // Оптимистично обновляем UI
+      if (type === 'like') allGames.find(g => g.name === name).likes++;
+      else allGames.find(g => g.name === name).dislikes++;
+      renderGames(allGames);
+
+      // Отправляем в таблицу
+      try {
+        await fetch(VOTE_URL, {
+          method: 'POST',
+          body: JSON.stringify({ name: name, vote: type })
+        });
+        // Обновляем список через секунду, чтобы таблица успела записать
+        setTimeout(() => loadGames(), 1500);
+      } catch (e) {
+        console.error('Vote failed', e);
+      }
+    }
+
+    document.getElementById('searchBox').addEventListener('input', () => renderGames(allGames));
+    loadGames();
+  </script>
+</body>
+</html>
